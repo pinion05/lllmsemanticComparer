@@ -4,8 +4,10 @@ import { basename } from "node:path";
 import { createOpenRouterCompletion } from "./openrouter.js";
 
 const DEFAULT_SAMPLE_COUNT = 5;
+const DEFAULT_EVALUATION_STRATEGY = "sampling";
 const AGGREGATION_METHOD = "trimean";
 const SAMPLE_ATTEMPT_LIMIT = 3;
+const CONFIDENCE_LEVELS = new Set(["low", "medium", "high"]);
 
 const SYSTEM_PROMPT = `
 You evaluate whether two documents express the same meaning and contain a comparable amount of information.
@@ -62,6 +64,156 @@ Required JSON shape:
 }
 `.trim();
 
+export const EVALUATION_STRATEGIES = Object.freeze({
+  SAMPLING: DEFAULT_EVALUATION_STRATEGY,
+  SINGLE_RESPONSIBILITY_ENSEMBLE: "single_responsibility_ensemble",
+});
+
+const PERSPECTIVE_DEFINITIONS = [
+  {
+    id: "semantic_similarity",
+    label: "semantic similarity",
+    systemPrompt: `
+You are a single-responsibility evaluator for semantic similarity only.
+Return strict JSON only. Do not wrap the JSON in markdown.
+
+Task:
+- Judge whether Document A and Document B express the same real-world meaning.
+- Focus on actor, action, object, date, quantity, scope, constraint, success metric, outcome, and polarity.
+- Ignore writing style.
+- Penalize contradictions, swapped entities, changed numbers, changed dates, or changed scope heavily.
+- Be conservative on boundary cases.
+
+Score anchor for semantic_similarity:
+- 95-100: same facts and meaning, only paraphrase-level wording differences
+- 80-94: same core meaning with minor factual differences or omissions
+- 60-79: same topic with notable scope/fact differences
+- 30-59: partial overlap only
+- 0-29: opposite claims or mostly unrelated content
+
+Required JSON shape:
+{
+  "semantic_similarity": number,
+  "summary": string,
+  "shared_points": string[],
+  "contradictions_or_scope_shifts": string[],
+  "confidence": "low" | "medium" | "high"
+}
+`.trim(),
+    requiredNumberFields: ["semantic_similarity"],
+    requiredStringFields: ["summary", "confidence"],
+    requiredArrayFields: ["shared_points", "contradictions_or_scope_shifts"],
+  },
+  {
+    id: "information_amount_parity",
+    label: "information amount parity",
+    systemPrompt: `
+You are a single-responsibility evaluator for information amount parity only.
+Return strict JSON only. Do not wrap the JSON in markdown.
+
+Task:
+- Judge whether the two documents contain roughly the same amount of material information.
+- Compare informational density, number of material facts, constraints, metrics, owners, dates, and exceptions.
+- Do not over-penalize harmless wording changes.
+- Be conservative when one side is clearly more detailed.
+
+Score anchor for information_amount_parity:
+- 95-100: nearly the same amount of material information
+- 80-94: somewhat different detail level, but still broadly similar
+- 60-79: one side clearly contains materially more detail
+- 30-59: strong mismatch in amount of information
+- 0-29: one side is almost empty relative to the other
+
+Required JSON shape:
+{
+  "information_amount_parity": number,
+  "summary": string,
+  "doc_a_only_points": string[],
+  "doc_b_only_points": string[],
+  "information_gap_notes": string[],
+  "confidence": "low" | "medium" | "high"
+}
+`.trim(),
+    requiredNumberFields: ["information_amount_parity"],
+    requiredStringFields: ["summary", "confidence"],
+    requiredArrayFields: ["doc_a_only_points", "doc_b_only_points", "information_gap_notes"],
+  },
+  {
+    id: "doc_a_coverage_by_doc_b",
+    label: "Document A coverage by Document B",
+    systemPrompt: `
+You are a single-responsibility evaluator for how well Document B covers Document A.
+Return strict JSON only. Do not wrap the JSON in markdown.
+
+Task:
+- Treat Document A as the source of truth.
+- Score how much of Document A's material information is present in Document B.
+- Focus on omissions in Document B relative to Document A.
+- Material facts include actor, action, object, date, quantity, owner, scope, constraint, exception, and outcome.
+- Be conservative. Missing a material fact should lower the score.
+
+Score anchor for doc_a_coverage_by_doc_b:
+- 95-100: almost all material facts from A are covered by B
+- 80-94: one minor material omission
+- 60-79: some material omissions
+- 30-59: many missing material facts
+- 0-29: almost none of A is covered by B
+
+Required JSON shape:
+{
+  "doc_a_coverage_by_doc_b": number,
+  "summary": string,
+  "covered_points": string[],
+  "missing_points": string[],
+  "information_gap_notes": string[],
+  "confidence": "low" | "medium" | "high"
+}
+`.trim(),
+    requiredNumberFields: ["doc_a_coverage_by_doc_b"],
+    requiredStringFields: ["summary", "confidence"],
+    requiredArrayFields: ["covered_points", "missing_points", "information_gap_notes"],
+  },
+  {
+    id: "doc_b_coverage_by_doc_a",
+    label: "Document B coverage by Document A",
+    systemPrompt: `
+You are a single-responsibility evaluator for how well Document A covers Document B.
+Return strict JSON only. Do not wrap the JSON in markdown.
+
+Task:
+- Treat Document B as the source of truth.
+- Score how much of Document B's material information is present in Document A.
+- Focus on omissions in Document A relative to Document B.
+- Material facts include actor, action, object, date, quantity, owner, scope, constraint, exception, and outcome.
+- Be conservative. Missing a material fact should lower the score.
+
+Score anchor for doc_b_coverage_by_doc_a:
+- 95-100: almost all material facts from B are covered by A
+- 80-94: one minor material omission
+- 60-79: some material omissions
+- 30-59: many missing material facts
+- 0-29: almost none of B is covered by A
+
+Required JSON shape:
+{
+  "doc_b_coverage_by_doc_a": number,
+  "summary": string,
+  "covered_points": string[],
+  "missing_points": string[],
+  "information_gap_notes": string[],
+  "confidence": "low" | "medium" | "high"
+}
+`.trim(),
+    requiredNumberFields: ["doc_b_coverage_by_doc_a"],
+    requiredStringFields: ["summary", "confidence"],
+    requiredArrayFields: ["covered_points", "missing_points", "information_gap_notes"],
+  },
+];
+
+const PERSPECTIVE_DEFINITION_MAP = new Map(
+  PERSPECTIVE_DEFINITIONS.map((definition) => [definition.id, definition]),
+);
+
 export function buildEvaluationPrompt({
   docAName,
   docAText,
@@ -107,6 +259,8 @@ export async function evaluateDocuments({
   fetchImpl,
   sampleCount = DEFAULT_SAMPLE_COUNT,
   sampleAttemptLimit = SAMPLE_ATTEMPT_LIMIT,
+  strategy = DEFAULT_EVALUATION_STRATEGY,
+  perspectiveModels = {},
 }) {
   const [docA, docB] = await Promise.all([loadDocument(fileA), loadDocument(fileB)]);
   const prompt = buildEvaluationPrompt({
@@ -116,22 +270,33 @@ export async function evaluateDocuments({
     docBText: docB.text,
   });
 
-  const runs = [];
+  let aggregated;
 
-  for (let index = 0; index < sampleCount; index += 1) {
-    runs.push(await collectSuccessfulRun({
+  if (strategy === EVALUATION_STRATEGIES.SINGLE_RESPONSIBILITY_ENSEMBLE) {
+    aggregated = await evaluateWithSingleResponsibilityEnsemble({
+      prompt,
+      model,
+      perspectiveModels,
+      apiKey,
+      fetchImpl,
+      sampleAttemptLimit,
+    });
+  } else if (strategy === EVALUATION_STRATEGIES.SAMPLING) {
+    aggregated = await evaluateWithSampling({
       prompt,
       model,
       apiKey,
       fetchImpl,
+      sampleCount,
       sampleAttemptLimit,
-    }));
+    });
+  } else {
+    throw new Error(`Unsupported evaluation strategy: ${strategy}`);
   }
-
-  const aggregated = aggregateEvaluationRuns(runs);
 
   return {
     model: aggregated.model,
+    strategy,
     documents: {
       a: {
         path: docA.path,
@@ -147,9 +312,65 @@ export async function evaluateDocuments({
       },
     },
     evaluation: aggregated.evaluation,
-    sampling: aggregated.sampling,
+    sampling: aggregated.sampling ?? null,
+    ensemble: aggregated.ensemble ?? null,
     usage: aggregated.usage,
   };
+}
+
+async function evaluateWithSampling({
+  prompt,
+  model,
+  apiKey,
+  fetchImpl,
+  sampleCount,
+  sampleAttemptLimit,
+}) {
+  const runs = [];
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    runs.push(await collectSuccessfulRun({
+      prompt,
+      model,
+      apiKey,
+      fetchImpl,
+      sampleAttemptLimit,
+    }));
+  }
+
+  return aggregateEvaluationRuns(runs);
+}
+
+async function evaluateWithSingleResponsibilityEnsemble({
+  prompt,
+  model,
+  perspectiveModels,
+  apiKey,
+  fetchImpl,
+  sampleAttemptLimit,
+}) {
+  const perspectiveRuns = await Promise.all(
+    PERSPECTIVE_DEFINITIONS.map(async (definition) => {
+      const perspectiveModel = perspectiveModels[definition.id] ?? model;
+      const result = await collectSuccessfulPerspectiveRun({
+        prompt,
+        systemPrompt: definition.systemPrompt,
+        model: perspectiveModel,
+        apiKey,
+        fetchImpl,
+        sampleAttemptLimit,
+        perspectiveId: definition.id,
+      });
+
+      return {
+        ...result,
+        id: definition.id,
+        label: definition.label,
+      };
+    }),
+  );
+
+  return aggregatePerspectiveRuns(perspectiveRuns);
 }
 
 async function collectSuccessfulRun({
@@ -190,36 +411,180 @@ async function collectSuccessfulRun({
   throw lastError;
 }
 
+async function collectSuccessfulPerspectiveRun({
+  prompt,
+  systemPrompt,
+  model,
+  apiKey,
+  fetchImpl,
+  sampleAttemptLimit,
+  perspectiveId,
+}) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < sampleAttemptLimit; attempt += 1) {
+    try {
+      const completion = await createOpenRouterCompletion({
+        systemPrompt,
+        userPrompt: prompt,
+        model,
+        apiKey,
+        fetchImpl,
+      });
+
+      const content = completion?.choices?.[0]?.message?.content;
+
+      if (typeof content !== "string" || content.trim() === "") {
+        throw new Error("OpenRouter response did not include a JSON message content.");
+      }
+
+      return {
+        model: completion.model ?? model ?? process.env.OPENROUTER_DEFAULT_MODEL,
+        output: parsePerspectiveJson(content, perspectiveId),
+        usage: completion.usage ?? null,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
 export function parseEvaluationJson(rawContent) {
   const sanitized = extractJsonObject(rawContent);
-  const parsed = JSON.parse(sanitized);
+  const parsed = normalizeParsedObject(JSON.parse(sanitized), {
+    requiredNumberFields: [
+      "semantic_similarity",
+      "information_amount_parity",
+      "doc_a_coverage_by_doc_b",
+      "doc_b_coverage_by_doc_a",
+    ],
+    requiredStringFields: ["verdict", "summary", "confidence"],
+    requiredArrayFields: [
+      "shared_points",
+      "doc_a_only_points",
+      "doc_b_only_points",
+      "information_gap_notes",
+    ],
+  });
 
-  const requiredNumberFields = [
-    "semantic_similarity",
-    "information_amount_parity",
-    "doc_a_coverage_by_doc_b",
-    "doc_b_coverage_by_doc_a",
-  ];
+  assertJsonShape(parsed, {
+    requiredNumberFields: [
+      "semantic_similarity",
+      "information_amount_parity",
+      "doc_a_coverage_by_doc_b",
+      "doc_b_coverage_by_doc_a",
+    ],
+    requiredStringFields: ["verdict", "summary", "confidence"],
+    requiredArrayFields: [
+      "shared_points",
+      "doc_a_only_points",
+      "doc_b_only_points",
+      "information_gap_notes",
+    ],
+  });
 
+  return parsed;
+}
+
+export function parsePerspectiveJson(rawContent, perspectiveId) {
+  const definition = PERSPECTIVE_DEFINITION_MAP.get(perspectiveId);
+
+  if (!definition) {
+    throw new Error(`Unsupported perspective: ${perspectiveId}`);
+  }
+
+  const sanitized = extractJsonObject(rawContent);
+  const parsed = normalizeParsedObject(JSON.parse(sanitized), definition);
+
+  assertJsonShape(parsed, definition);
+
+  return parsed;
+}
+
+function normalizeParsedObject(parsed, {
+  requiredNumberFields,
+  requiredStringFields,
+  requiredArrayFields,
+}) {
+  const normalized = { ...parsed };
+
+  for (const field of requiredNumberFields) {
+    if (typeof normalized[field] === "string" && normalized[field].trim() !== "") {
+      const numericValue = Number(normalized[field]);
+      if (Number.isFinite(numericValue)) {
+        normalized[field] = numericValue;
+      }
+    }
+  }
+
+  for (const field of requiredStringFields) {
+    if (field === "confidence") {
+      normalized[field] = normalizeConfidence(normalized[field]);
+      continue;
+    }
+
+    if (normalized[field] !== undefined && normalized[field] !== null && typeof normalized[field] !== "string") {
+      normalized[field] = String(normalized[field]);
+    }
+  }
+
+  for (const field of requiredArrayFields) {
+    normalized[field] = normalizeStringArray(normalized[field]);
+  }
+
+  return normalized;
+}
+
+function normalizeConfidence(value) {
+  if (typeof value !== "string") {
+    return "medium";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return CONFIDENCE_LEVELS.has(normalized) ? normalized : "medium";
+}
+
+function normalizeStringArray(value) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => normalizeStringArray(item))
+      .filter((item) => item !== "");
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized === "" ? [] : [normalized];
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return [String(value)];
+  }
+
+  return [];
+}
+
+function assertJsonShape(parsed, {
+  requiredNumberFields,
+  requiredStringFields,
+  requiredArrayFields,
+}) {
   for (const field of requiredNumberFields) {
     if (typeof parsed[field] !== "number" || Number.isNaN(parsed[field])) {
       throw new Error(`Expected numeric field: ${field}`);
     }
   }
 
-  const requiredStringFields = ["verdict", "summary", "confidence"];
   for (const field of requiredStringFields) {
     if (typeof parsed[field] !== "string" || parsed[field].trim() === "") {
       throw new Error(`Expected non-empty string field: ${field}`);
     }
   }
-
-  const requiredArrayFields = [
-    "shared_points",
-    "doc_a_only_points",
-    "doc_b_only_points",
-    "information_gap_notes",
-  ];
 
   for (const field of requiredArrayFields) {
     if (!Array.isArray(parsed[field]) || !parsed[field].every((item) => typeof item === "string")) {
@@ -227,7 +592,9 @@ export function parseEvaluationJson(rawContent) {
     }
   }
 
-  return parsed;
+  if (!CONFIDENCE_LEVELS.has(parsed.confidence)) {
+    throw new Error("Expected confidence to be one of: low, medium, high");
+  }
 }
 
 export function calibrateEvaluation(parsed) {
@@ -305,6 +672,110 @@ export function aggregateEvaluationRuns(runs) {
       })),
     },
   };
+}
+
+export function aggregatePerspectiveRuns(perspectiveRuns) {
+  if (!Array.isArray(perspectiveRuns) || perspectiveRuns.length === 0) {
+    throw new Error("At least one perspective run is required for aggregation.");
+  }
+
+  const outputsById = Object.fromEntries(
+    perspectiveRuns.map((run) => [run.id, run.output]),
+  );
+
+  for (const definition of PERSPECTIVE_DEFINITIONS) {
+    if (!outputsById[definition.id]) {
+      throw new Error(`Missing perspective run: ${definition.id}`);
+    }
+  }
+
+  const evaluation = calibrateEvaluation({
+    overall_equivalence: 0,
+    semantic_similarity: outputsById.semantic_similarity.semantic_similarity,
+    information_amount_parity: outputsById.information_amount_parity.information_amount_parity,
+    doc_a_coverage_by_doc_b: outputsById.doc_a_coverage_by_doc_b.doc_a_coverage_by_doc_b,
+    doc_b_coverage_by_doc_a: outputsById.doc_b_coverage_by_doc_a.doc_b_coverage_by_doc_a,
+    verdict: "pending_calibration",
+    summary: combinePerspectiveSummaries(perspectiveRuns),
+    shared_points: uniqueStrings([
+      ...outputsById.semantic_similarity.shared_points,
+      ...outputsById.doc_a_coverage_by_doc_b.covered_points,
+      ...outputsById.doc_b_coverage_by_doc_a.covered_points,
+    ], 6),
+    doc_a_only_points: uniqueStrings([
+      ...outputsById.information_amount_parity.doc_a_only_points,
+      ...outputsById.doc_a_coverage_by_doc_b.missing_points,
+    ], 6),
+    doc_b_only_points: uniqueStrings([
+      ...outputsById.information_amount_parity.doc_b_only_points,
+      ...outputsById.doc_b_coverage_by_doc_a.missing_points,
+    ], 6),
+    information_gap_notes: uniqueStrings([
+      ...outputsById.semantic_similarity.contradictions_or_scope_shifts,
+      ...outputsById.information_amount_parity.information_gap_notes,
+      ...outputsById.doc_a_coverage_by_doc_b.information_gap_notes,
+      ...outputsById.doc_b_coverage_by_doc_a.information_gap_notes,
+    ], 8),
+    confidence: aggregateConfidence(perspectiveRuns.map((run) => run.output.confidence)),
+  });
+
+  const uniqueModels = [...new Set(perspectiveRuns.map((run) => run.model))];
+
+  return {
+    model: uniqueModels.length === 1 ? uniqueModels[0] : "multi-model-ensemble",
+    evaluation,
+    usage: aggregateUsage(perspectiveRuns.map((run) => run.usage)),
+    ensemble: {
+      perspectiveCount: perspectiveRuns.length,
+      aggregation: "single_responsibility",
+      perspectives: perspectiveRuns.map((run) => ({
+        id: run.id,
+        label: run.label,
+        model: run.model,
+        output: run.output,
+        usage: run.usage,
+      })),
+    },
+  };
+}
+
+function combinePerspectiveSummaries(perspectiveRuns) {
+  return uniqueStrings(
+    perspectiveRuns.map((run) => run.output.summary),
+    perspectiveRuns.length,
+  ).join(" ");
+}
+
+function uniqueStrings(values, limit = values.length) {
+  const seen = new Set();
+  const unique = [];
+
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    const normalized = value.trim();
+
+    if (normalized === "") {
+      continue;
+    }
+
+    const key = normalized.toLowerCase();
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(normalized);
+
+    if (unique.length >= limit) {
+      break;
+    }
+  }
+
+  return unique;
 }
 
 export function deriveVerdict({
@@ -456,12 +927,16 @@ function extractJsonObject(rawContent) {
 }
 
 export function formatReport(result) {
-  const { evaluation, documents, model, usage, sampling } = result;
+  const { evaluation, documents, model, usage, sampling, ensemble, strategy } = result;
 
   const lines = [
     `Model: ${model}`,
+    strategy ? `Strategy: ${strategy}` : null,
     sampling
       ? `Sampling: ${sampling.sampleCount} runs (${sampling.estimator}, representative run ${sampling.representativeRun})`
+      : null,
+    ensemble
+      ? `Ensemble: ${ensemble.perspectiveCount} single-responsibility perspectives`
       : null,
     `Verdict: ${evaluation.verdict} (confidence: ${evaluation.confidence})`,
     `Overall equivalence: ${evaluation.overall_equivalence}/100`,
@@ -476,6 +951,14 @@ export function formatReport(result) {
     "Summary:",
     evaluation.summary,
   ];
+
+  if (ensemble) {
+    lines.push("");
+    lines.push("Perspective runs:");
+    for (const perspective of ensemble.perspectives) {
+      lines.push(`- ${perspective.id}: ${perspective.model}`);
+    }
+  }
 
   appendSection(lines, "Shared points", evaluation.shared_points);
   appendSection(lines, "A-only points", evaluation.doc_a_only_points);

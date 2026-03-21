@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 
 import { parseShellEnvText } from "../src/env.js";
 import {
+  aggregatePerspectiveRuns,
   aggregateEvaluationRuns,
   buildEvaluationPrompt,
   calibrateEvaluation,
   deriveVerdict,
   formatReport,
   parseEvaluationJson,
+  parsePerspectiveJson,
   trimean,
 } from "../src/evaluator.js";
 
@@ -37,6 +39,29 @@ test("parseEvaluationJson extracts fenced JSON", () => {
 
   assert.equal(parsed.information_amount_parity, 74);
   assert.equal(parsed.shared_points.length, 2);
+});
+
+test("parseEvaluationJson repairs stringly typed fields and missing arrays", () => {
+  const parsed = parseEvaluationJson(JSON.stringify({
+    overall_equivalence: 0,
+    semantic_similarity: "88",
+    information_amount_parity: "74",
+    doc_a_coverage_by_doc_b: "79",
+    doc_b_coverage_by_doc_a: "76",
+    verdict: "mostly_equivalent",
+    summary: "summary",
+    shared_points: "shared fact",
+    doc_a_only_points: null,
+    doc_b_only_points: ["b-only"],
+    information_gap_notes: undefined,
+    confidence: "HIGH",
+  }));
+
+  assert.equal(parsed.semantic_similarity, 88);
+  assert.deepEqual(parsed.shared_points, ["shared fact"]);
+  assert.deepEqual(parsed.doc_a_only_points, []);
+  assert.deepEqual(parsed.information_gap_notes, []);
+  assert.equal(parsed.confidence, "high");
 });
 
 test("formatReport renders the core metrics", () => {
@@ -126,6 +151,115 @@ test("aggregateEvaluationRuns rejects an empty run list", () => {
   assert.throws(() => aggregateEvaluationRuns([]), /At least one evaluation run is required/);
 });
 
+test("parsePerspectiveJson accepts a semantic single-responsibility payload", () => {
+  const parsed = parsePerspectiveJson(JSON.stringify({
+    semantic_similarity: 91,
+    summary: "Both documents describe the same launch decision.",
+    shared_points: ["Same rollout date", "Same owner"],
+    contradictions_or_scope_shifts: ["No contradiction"],
+    confidence: "high",
+  }), "semantic_similarity");
+
+  assert.equal(parsed.semantic_similarity, 91);
+  assert.equal(parsed.shared_points.length, 2);
+});
+
+test("parsePerspectiveJson repairs singleton and missing arrays", () => {
+  const parsed = parsePerspectiveJson(JSON.stringify({
+    doc_a_coverage_by_doc_b: "68",
+    summary: "Document B misses several details from A.",
+    covered_points: "Deadline retained",
+    missing_points: null,
+    information_gap_notes: "B drops operational safeguards.",
+    confidence: "HIGH",
+  }), "doc_a_coverage_by_doc_b");
+
+  assert.equal(parsed.doc_a_coverage_by_doc_b, 68);
+  assert.deepEqual(parsed.covered_points, ["Deadline retained"]);
+  assert.deepEqual(parsed.missing_points, []);
+  assert.deepEqual(parsed.information_gap_notes, ["B drops operational safeguards."]);
+  assert.equal(parsed.confidence, "high");
+});
+
+test("aggregatePerspectiveRuns merges single-responsibility outputs into one evaluation", () => {
+  const aggregated = aggregatePerspectiveRuns([
+    perspectiveRun("semantic_similarity", {
+      semantic_similarity: 88,
+      summary: "Core meaning matches.",
+      shared_points: ["Same migration goal", "Same deadline"],
+      contradictions_or_scope_shifts: ["No contradiction"],
+    }, "model/semantic"),
+    perspectiveRun("information_amount_parity", {
+      information_amount_parity: 72,
+      summary: "Document A has more implementation detail.",
+      doc_a_only_points: ["Document A lists rollback steps."],
+      doc_b_only_points: ["Document B adds a short status note."],
+      information_gap_notes: ["Overall detail is asymmetric."],
+    }, "model/info"),
+    perspectiveRun("doc_a_coverage_by_doc_b", {
+      doc_a_coverage_by_doc_b: 68,
+      summary: "Document B misses several details from A.",
+      covered_points: ["Deadline retained"],
+      missing_points: ["Rollback steps omitted"],
+      information_gap_notes: ["B drops operational safeguards."],
+    }, "model/a-coverage"),
+    perspectiveRun("doc_b_coverage_by_doc_a", {
+      doc_b_coverage_by_doc_a: 84,
+      summary: "Document A covers most of B.",
+      covered_points: ["Status note implied"],
+      missing_points: ["Small wording-only nuance"],
+      information_gap_notes: ["A captures most B facts."],
+    }, "model/b-coverage"),
+  ]);
+
+  assert.equal(aggregated.model, "multi-model-ensemble");
+  assert.equal(aggregated.evaluation.semantic_similarity, 88);
+  assert.equal(aggregated.evaluation.information_amount_parity, 72);
+  assert.equal(aggregated.evaluation.doc_a_coverage_by_doc_b, 68);
+  assert.equal(aggregated.evaluation.doc_b_coverage_by_doc_a, 84);
+  assert.equal(aggregated.evaluation.overall_equivalence, 81);
+  assert.equal(aggregated.evaluation.verdict, "partially_equivalent");
+  assert.match(aggregated.evaluation.summary, /Core meaning matches/);
+  assert.match(aggregated.evaluation.summary, /Document A has more implementation detail/);
+  assert.deepEqual(aggregated.ensemble.perspectives.map((item) => item.id), [
+    "semantic_similarity",
+    "information_amount_parity",
+    "doc_a_coverage_by_doc_b",
+    "doc_b_coverage_by_doc_a",
+  ]);
+  assert.equal(aggregated.usage.total_tokens, 80);
+});
+
+test("formatReport renders ensemble metadata", () => {
+  const output = formatReport({
+    model: "multi-model-ensemble",
+    strategy: "single_responsibility_ensemble",
+    ensemble: {
+      perspectiveCount: 4,
+      perspectives: [
+        { id: "semantic_similarity", model: "model/semantic" },
+        { id: "information_amount_parity", model: "model/info" },
+      ],
+    },
+    sampling: null,
+    documents: {
+      a: { name: "a.md", charCount: 100, lineCount: 8 },
+      b: { name: "b.md", charCount: 120, lineCount: 9 },
+    },
+    evaluation: sampleEvaluation(),
+    usage: {
+      prompt_tokens: 10,
+      completion_tokens: 20,
+      total_tokens: 30,
+    },
+  });
+
+  assert.match(output, /Strategy: single_responsibility_ensemble/);
+  assert.match(output, /Ensemble: 4 single-responsibility perspectives/);
+  assert.match(output, /Perspective runs:/);
+  assert.match(output, /semantic_similarity: model\/semantic/);
+});
+
 test("parseShellEnvText reads OpenRouter values from zshrc-style exports", () => {
   const parsed = parseShellEnvText(`
 export OPENROUTER_API_KEY="key-from-zshrc"
@@ -162,6 +296,24 @@ function sampleRun(run, overrides = {}) {
     evaluation: {
       ...sampleEvaluation(),
       ...overrides,
+    },
+    usage: {
+      prompt_tokens: 10,
+      completion_tokens: 10,
+      total_tokens: 20,
+      cost: 0,
+    },
+  };
+}
+
+function perspectiveRun(id, output, model = "test/model") {
+  return {
+    id,
+    label: id,
+    model,
+    output: {
+      confidence: "high",
+      ...output,
     },
     usage: {
       prompt_tokens: 10,
