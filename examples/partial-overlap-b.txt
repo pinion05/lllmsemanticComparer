@@ -1,0 +1,4 @@
+On May 1, the support organization will deploy a chatbot led by Nora Lee.
+The bot will handle password resets and shipping-status questions.
+The team will measure ticket deflection and first-response time.
+

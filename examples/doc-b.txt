@@ -1,0 +1,4 @@
+Atlas beta will launch on April 15, and Mina Kim is responsible for the rollout.
+The first release is capped at 500 invited users.
+The team will monitor activation, retention, and bug counts after launch.
+

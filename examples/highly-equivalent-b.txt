@@ -1,0 +1,4 @@
+Northwind's mobile app release is scheduled for June 3, with Jae Park leading the rollout.
+The initial launch targets 2,000 current customers.
+For the first week, the team will monitor login success, crash frequency, and seven-day retention.
+

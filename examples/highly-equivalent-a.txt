@@ -1,0 +1,5 @@
+The Northwind mobile app will launch on June 3.
+Jae Park owns the release.
+The first wave includes 2,000 existing customers.
+The team will watch login rate, crash rate, and seven-day retention during the first week.
+

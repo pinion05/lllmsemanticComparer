@@ -1,0 +1,6 @@
+Harbor's analytics migration starts September 1, with Dana Choi leading the rollout.
+Phase one transfers the billing dashboards, weekly revenue reporting, and anomaly-alert workflows into the new warehouse.
+Only finance and operations can use the new system during the first month.
+Each day, the team will verify row-level parity and monitor query latency, refresh failures, and issues reported by stakeholders.
+If parity stays above 99.5% for two weeks, the old pipeline will be shut down on September 30.
+

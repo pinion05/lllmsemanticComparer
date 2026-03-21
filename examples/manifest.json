@@ -1,0 +1,26 @@
+[
+  {
+    "id": "highly-equivalent",
+    "description": "뜻과 정보량이 거의 같은 패러프레이즈 쌍",
+    "fileA": "./examples/highly-equivalent-a.txt",
+    "fileB": "./examples/highly-equivalent-b.txt"
+  },
+  {
+    "id": "info-gap",
+    "description": "핵심 의미는 같지만 한쪽이 더 자세한 쌍",
+    "fileA": "./examples/info-gap-a.txt",
+    "fileB": "./examples/info-gap-b.txt"
+  },
+  {
+    "id": "partial-overlap",
+    "description": "일부만 겹치고 일부는 다른 쌍",
+    "fileA": "./examples/partial-overlap-a.txt",
+    "fileB": "./examples/partial-overlap-b.txt"
+  },
+  {
+    "id": "materially-different",
+    "description": "주제는 비슷하지만 결론과 정보가 다른 쌍",
+    "fileA": "./examples/materially-different-a.txt",
+    "fileB": "./examples/materially-different-b.txt"
+  }
+]

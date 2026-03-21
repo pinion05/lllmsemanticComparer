@@ -1,0 +1,3 @@
+Starting September 1, Dana Choi will move Harbor's billing dashboards, revenue reports, and anomaly alerts to a new warehouse for finance and operations only.
+The team will check daily parity and reliability metrics, and if parity stays above 99.5% for two weeks, the legacy pipeline shuts off on September 30.
+
