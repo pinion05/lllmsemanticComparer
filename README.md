@@ -279,7 +279,7 @@ summary, shared points, gap notes 같은 서술형 필드는 5개 실행 중에�
 
 ```bash
 export OPENROUTER_API_KEY=your_key_here
-export OPENROUTER_DEFAULT_MODEL=openai/gpt-4.1-mini
+export OPENROUTER_DEFAULT_MODEL=nvidia/nemotron-3-nano-30b-a3b:free
 ```
 
 적용 후에는 `source ~/.zshrc`를 실행하거나 새 셸을 열면 됩니다.
@@ -303,7 +303,7 @@ npm run compare -- ./doc-a.txt ./doc-b.txt --json
 모델 강제 지정:
 
 ```bash
-npm run compare -- ./doc-a.txt ./doc-b.txt --model anthropic/claude-3.7-sonnet
+npm run compare -- ./doc-a.txt ./doc-b.txt --model nvidia/nemotron-3-nano-30b-a3b:free
 ```
 
 저장소 예제로 시험:
