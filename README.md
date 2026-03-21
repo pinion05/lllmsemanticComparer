@@ -50,7 +50,7 @@ HTML 압축 자동연구에서는 압축률만 보면 안 됩니다. 토큰 수�
 ### 원본 / preserved / compressed / lost 세트
 
 원본 파일:
-- [source-original.txt](/Users/pinion/dev/lllmsemanticComparer/examples/source-original.txt)
+- [source-original.txt](./examples/source-original.txt)
 
 비교 결과:
 
@@ -68,8 +68,8 @@ HTML 압축 자동연구에서는 압축률만 보면 안 됩니다. 토큰 수�
 ### 경계 사례 안정성 기록
 
 파일:
-- [partial-overlap-a.txt](/Users/pinion/dev/lllmsemanticComparer/examples/partial-overlap-a.txt)
-- [partial-overlap-b.txt](/Users/pinion/dev/lllmsemanticComparer/examples/partial-overlap-b.txt)
+- [partial-overlap-a.txt](./examples/partial-overlap-a.txt)
+- [partial-overlap-b.txt](./examples/partial-overlap-b.txt)
 
 도구 전체를 3번 독립 호출했을 때의 최종 집계 밴드:
 
@@ -174,8 +174,8 @@ summary, shared points, gap notes 같은 서술형 필드는 5개 실행 중에�
 이 도구는 처음부터 지금처럼 안정적이지 않았습니다. 아래는 같은 경계 사례를 반복 실행하면서 점수 밴드를 좁혀간 기록입니다.
 
 기준 문서쌍:
-- [partial-overlap-a.txt](/Users/pinion/dev/lllmsemanticComparer/examples/partial-overlap-a.txt)
-- [partial-overlap-b.txt](/Users/pinion/dev/lllmsemanticComparer/examples/partial-overlap-b.txt)
+- [partial-overlap-a.txt](./examples/partial-overlap-a.txt)
+- [partial-overlap-b.txt](./examples/partial-overlap-b.txt)
 
 ### 초기 상태: 단일 호출 + LLM이 overall / verdict 직접 결정
 
