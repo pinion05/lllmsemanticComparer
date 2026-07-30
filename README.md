@@ -481,6 +481,7 @@ summary, shared points, gap notes 같은 서술형 필드는 5개 실행 중에�
 | **codex** | 18.6% | **93** | 95 | **90** | **95** | 90 | **5%** | **10%** | highly_equivalent |
 | goose | 15.9% | 93 | 95 | 90 | 89 | **96** | 5% | 10% | mostly_equivalent |
 | kilo | **15.4%** | 93 | 95 | 85 | 90 | 95 | 5% | 15% | mostly_equivalent |
+| **claude-code** | 27.2% | 86 | 88 | 74 | 82 | 95 | 12% | 26% | mostly_equivalent |
 | naive | 30.0% | 84 | 95 | 60 | 69 | 90 | 5% | **40%** | partially_equivalent |
 
 상세 JSON: [`.omx/compaction-deepseek-eval.json`](./.omx/compaction-deepseek-eval.json)
@@ -509,10 +510,18 @@ summary, shared points, gap notes 같은 서술형 필드는 5개 실행 중에�
 5. **압축률 vs 정보손실 트레이드오프**
    - codex: 18.6% 압축률에 손실 10% → **가장 효율적**
    - kilo: 15.4%로 가장 작지만 손실 15% → 한계 효용 급감
+   - claude-code: 27.2%나 차지하고 손실 26% → **비효율적** (3위 codex보다 1.5배 크면서 손실 2.6배)
    - naive: 30%나 쓰고 손실 40% → **최악**
+
+6. **실제 Claude Code 프롬프트 vs 단순 9섹션 (codex)**
+   - 둘 다 9섹션 구조를 사용하지만, CC 프롬프트는 `<analysis>` scratchpad를 요구 → 토큰 낭비
+   - CC 프롬프트는 "verbatim quotes", "full code snippets", "direct quotes"를 요구 → 길어짐
+   - 결과: CC가 codex보다 **1.46배 크면서**(27.2% vs 18.6%) 의미손실 2.4배, 정보손실 2.6배
+   - 9섹션 자체가 아니라 **analysis 블록 + verbatim 요구사항이 비효율의 원인**
 
 ### 결론
 
 - **구조화 압축(codex 9섹션)**이 단순 불릿(kilo)이나 서술형(goose)보다 정보 보존에서 우위
+- **실제 Claude Code 컴팩션 프롬프트는 비효율적** — analysis scratchpad + verbatim 요구사항 때문에 27%나 커지면서 정보손실 26%
 - **naive truncation은 절대 쓰면 안 됨** — 공간을 2배 쓰면서도 정보손실 4배
-- DeepSeek V4 Flash는 컴팩션 생성기로는 우수하나, 평가자로 사용 시 JSON 출력이 길어지면 파싱 실패가 발생할 수 있음 (kilo/goose에서 관찰)
+- DeepSeek V4 Flash는 컴팩션 생성기로는 우수하나, 평가자로 사용 시 JSON 출력이 길어지면 파싱 실패가 발생할 수 있음 (kilo/goose/claude-code에서 관찰)

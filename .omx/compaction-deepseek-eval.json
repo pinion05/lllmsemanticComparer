@@ -133,5 +133,41 @@
       "Bug report and fix for chart scaling distortion due to overlay series (PR #50)",
       "Analysis of ApeWisdom data pipeline inefficiency (only top 120 tickers checked, missing 81 of 89 penny stocks)"
     ]
+  },
+  "claude-code": {
+    "overall_equivalence": 86,
+    "semantic_similarity": 88,
+    "information_amount_parity": 74,
+    "doc_a_coverage_by_doc_b": 82,
+    "doc_b_coverage_by_doc_a": 95,
+    "verdict": "mostly_equivalent",
+    "semantic_loss_rate": 12,
+    "info_loss_rate": 26,
+    "coverage_loss": 18,
+    "compression_ratio": 27.2,
+    "total_tokens": 59397,
+    "runs": 3,
+    "bands": {
+      "semantic": "85-95",
+      "info": "70-85",
+      "cov_ab": "80-90",
+      "cov_ba": "95-95"
+    },
+    "representative_summary": "Both documents describe the same software development session: chart library migration (PR #47), bug fixes for chart squashing (PR #50, #52), penny stock pipeline overhaul (PR #51), bid/ask column addition (PR #53), and issue creation (#54, #55). Document A is a full conversational transcript with all user messages, assistant responses, code changes, and debugging steps. Document B is a structured summary that captures all key facts, decisions, and outcomes but omits many intermediate details, code snippets, and conversational flow. The core meaning is the same, but Document A has significantly more detail.",
+    "gap_notes": [
+      "Document A contains the full conversational flow with all user messages in Korean and detailed assistant responses, while Document B provides a condensed English summary.",
+      "Document A includes exact code snippets, line numbers, and debugging steps that are absent in Document B.",
+      "Document B organizes information into clear sections (Primary Request, Key Technical Concepts, Files and Code Sections, Errors and Fixes, Problem Solving, All User Messages, Pending Tasks, Current Work, Optional Next Step) which Document A lacks.",
+      "Document B explicitly lists pending tasks and optional next steps, which is implicit in Document A.",
+      "Document A has more granular detail about specific errors (e.g., chartDim signal deletion, JSX 7026 errors, edit duplication bugs) and their fixes.",
+      "Document B provides a higher-level overview that captures all major decisions and outcomes but omits intermediate debugging steps and conversational context."
+    ],
+    "doc_a_only": [
+      "Full conversational transcript with all user messages in Korean and assistant responses",
+      "Detailed step-by-step debugging process for chart squashing issues (priceToCoordinate pixel measurements, component isolation, hypothesis testing)",
+      "Specific code snippets and file paths (e.g., raddit-astro/src/components/Dashboard.tsx, raddit-astro/src/lib/upstream.ts)",
+      "Exact line numbers and anchor references for edits",
+      "Detailed smoke test setup and failure analysis (ESM import, standalone build)"
+    ]
   }
 }

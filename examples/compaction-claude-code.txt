@@ -1,0 +1,104 @@
+1. Primary Request and Intent:
+   The user's primary requests throughout this conversation were:
+   - Sync dev/main branches to latest
+   - Replace custom Canvas 2D chart with TradingView lightweight-charts (PR #47)
+   - Submit PR for architect sub-agent deep review
+   - Fix chart squashing bugs when switching intervals (PR #50 - overlay autoscale, PR #52 - manual scale autoScale reset)
+   - Analyze why ApeWisdom shows 0 penny stocks and fix the pipeline (PR #51 - full scan with batch price lookup)
+   - Add bid/ask ratio column to dashboard table (PR #53)
+   - Create issues for chart grid screener view (#54) and frontend design improvements (#55)
+   - All PRs to follow CONTRIBUTING rules: topic branch → PR → architect review → merge commit to dev (no FF)
+
+2. Key Technical Concepts:
+   - TradingView lightweight-charts v5.2 (ESM, standalone build, autoscaleInfoProvider, priceScale().applyOptions)
+   - Yahoo Finance APIs: v8/chart (per-ticker), spark (batch, unauthenticated), v7/quote (bid/ask with crumb auth)
+   - ApeWisdom API: paginated mentions (751 tickers total), no price data
+   - Astro + SolidJS: Dashboard.tsx with signals, onMount/onCleanup lifecycle, classList toggle modals
+   - Korean color convention: red=up (--up), blue=down (--down)
+   - stale-if-error pattern: TtlCache serves stale data on throw
+   - CONTRIBUTING rules: no direct push to main/dev, topic branch → PR, no FF merge (merge commits only)
+   - Railway deployment: CI auto-deploys raddit-web-dev on dev push
+
+3. Files and Code Sections:
+   - **raddit-astro/src/components/Dashboard.tsx**: Main dashboard component. Complete rewrite in PR #47 (lightweight-charts integration), then multiple fixes:
+     - chartDim signal restoration (regression fix)
+     - lastChartData for dark mode full redraw
+     - autoscaleInfoProvider: () => null on overlay series (PR #50)
+     - autoScale re-enable on range change (PR #52)
+     - buy_ratio_pct column + bidAskTotal mapping + shallow quote dimming (PR #53)
+   - **raddit-astro/src/lib/upstream.ts**: Data layer:
+     - MentionItem interface with buy_ratio_pct added
+     - attachQuotes (per-ticker) removed, attachQuotesBatch (spark batch) added
+     - attachBidAskBatch (v7/quote + crumb batch) added with 401/403 retry
+     - fetchBidAsk preserved for single-stock detail modal
+   - **raddit-astro/src/lib/services.ts**: getData function:
+     - slice(120) removed → full scan with price filter
+     - EQUITY filter (ETF exclusion)
+     - attachBidAskBatch call after price filter
+     - Yahoo bulk failure throw for stale-if-error protection
+   - **raddit-astro/src/lib/cache.ts**: TtlCache with stale-if-error (lines 50-53)
+   - **raddit-astro/src/layouts/Layout.astro**: Global CSS:
+     - [hidden]{display:none!important} added (P1 fix)
+     - .hairline → .chart-canvas/.chart-msg
+     - .thin class for shallow quote dimming
+     - table min-width 860→900
+   - **raddit-astro/src/lib/yahooAuth.ts**: Crumb authentication for bid/ask API
+
+4. Errors and Fixes:
+   - **chartDim signal deletion**: Accidentally removed chartDim signal line during PR #47 rewrite → caused setChartDim undefined error. Fixed by restoring the signal declaration.
+   - **JSX 7026 errors (328)**: Pre-existing issue from SolidJS JSX types not loading in astro check. Not a regression (astro build uses esbuild, CI has no type-check step).
+   - **Smoke test ESM import failure**: production mjs imports fancy-canvas as bare specifier → browser can't load. Fixed by switching to standalone.production.js (non-module, exposes window.LightweightCharts).
+   - **Edit duplication bug**: Single-line edit replaced only opening line, leaving original block below → duplication. Fixed by deleting duplicate group.
+   - **attachQuotes reference after deletion**: Removed per-ticker fetchQuote but attachQuotes still referenced it. Fixed by removing attachQuotes lines.
+   - **Duplicate applyTheme() call**: Created duplicate line during PR #52 edits. Removed.
+   - **Duplicate vol line**: Created duplicate during PR #53 edits. Removed.
+   - **Duplicate Quote interface block**: Stray lines 91-94 left after upstream.ts edit. Removed.
+
+5. Problem Solving:
+   - **Chart squashing #1 (PR #50)**: Overlay series (MA/BB) expand Y-axis range. Fix: autoscaleInfoProvider: () => null on overlay series. Deterministic reproduction with priceToCoordinate pixel measurement.
+   - **Chart squashing #2 (PR #52)**: Manual Y-axis zoom disables autoScale. Fix: re-enable autoScale: true on range change (6 lines). User's specific symptom ("works fine without manual adjustment, squashes after touching scale") was the decisive clue.
+   - **Penny stock pipeline (PR #51)**: Two structural issues: slice(120) before price filter drops 81/89 penny stocks, FALSE_POSITIVE blanket exclusion removes actual <$5 equities. Fix: batch spark price lookup for all 751 tickers, remove slice(120), EQUITY filter, FP threshold linked to price filter. Recovery: 4→19 items, cold load 11s→2.5s.
+   - **Bid/ask on dashboard (PR #53)**: Batch v7/quote with crumb auth. Low liquidity noise (bidSize=1~2) handled with shallow quote dimming (opacity .4 + tooltip). Crumb auth retry on 401/403.
+
+6. All User Messages:
+   - "하이" (Hi)
+   - "지금 워킹디렉토리가 어디임?" (Where is working directory?)
+   - "이동 가능함?" (Can I move?)
+   - "raddit"
+   - "내 로컬에 raddit이란 폴더가있어" (I have a raddit folder locally)
+   - "고고" (Let's go)
+   - "풀해서 데브랑 메인 최신화해줘" (Pull and update dev/main)
+   - "작업중이던 브랜치는뭐임" (What branch was I working on?)
+   - "확인해봐 왜 뒤쳐졌는지 분석" (Check why it's behind)
+   - "작업 착수하자" (Start working)
+   - "pr 올리고 pr 을 서브에이전트 심층리뷰시켜" (Submit PR and have sub-agent deep review)
+   - "한번 더 리뷰하고 승인받으면 데브 머지" (Review once more, merge to dev on approval)
+   - "기존에 있던 차트관련 이슈들 닫아도되면 닫아" (Close existing chart-related issues if possible)
+   - "이슈등록 : 차트 봉 단위를 변경할때 각각 차트가 초기화? 가 제대로 안되고 높이단위는 유지되서 주 -> 5분 으로 변경하면 차트가 심하게 위아래로 찌그러지는 문제" (Bug report: chart squashing on interval switch)
+   - "응 해줘" (Yes, do it)
+   - "차트 세로스케일을 조정하지않고 캔들 단위를 변경하면 잘 되는데 세로 스케일을 한번이라도 수정하고 캔들단위를 변경하면 또 찌그러짐" (Bug: squashing after manual Y-axis adjustment + interval switch)
+   - "단일종목 자세히보기 말고 테이블 보이는 대시보드 화면에서 각 종목 호가잔량비율 보이게해줘" (Add bid/ask ratio to dashboard table)
+   - "리뷰루프" (Review loop)
+   - "프론트 디자인 개선 이슈도 등록해줘" (Register frontend design improvement issue too)
+
+7. Pending Tasks:
+   - PR #53 (feat/dashboard-bidask-column) merged to dev, no pending items
+   - Issue #48 (session bands restoration) - follow-up from PR #47 de-scope
+   - Issue #54 (chart grid screener view) - enhancement, not yet implemented
+   - Issue #55 (frontend design improvements) - enhancement backlog, not yet implemented
+   - No explicit pending tasks from user's most recent messages
+
+8. Current Work:
+   The most recent work was creating two issues:
+   - **Issue #54**: "feat: 차트 위주 스크리너 뷰 추가 (목록형 ↔ 차트 그리드 토글)" - Chart grid screener view with toggle between list and chart grid, responsive cards with mini candles, filter/sort integration, lazy rendering with IntersectionObserver
+   - **Issue #55**: "feat: 프론트엔드 디자인/UX 전반 개선" - Design backlog with prioritized items: P1 (dark mode toggle, loading skeletons, modal animations), P2 (wide layout, sticky filter bar, typography), P3 (web fonts, favicon/OG meta, accessibility)
+
+   The last PR merged was #53 (bid/ask ratio on dashboard) with architect review loop. All PRs (#47, #50, #51, #52, #53) have been merged to dev via merge commits.
+
+9. Optional Next Step:
+   The user's most recent explicit request was to register the frontend design improvement issue (#55), which has been completed. There is no pending implementation task. The next logical step would be to begin implementing one of the open issues:
+   - Issue #54 (chart grid screener view) - the user explicitly asked for this feature
+   - Issue #55 (frontend design improvements) - P1 items first (dark mode toggle, loading skeletons, modal animations)
+   - Issue #48 (session bands restoration) - oldest pending item
+
+   However, since the user hasn't explicitly asked to start implementation yet, the appropriate next step is to wait for the user's direction on which issue to tackle first. The user's last message was "프론트 디자인 개선 이슈도 등록해줘" (Register frontend design improvement issue too), which has been completed.
