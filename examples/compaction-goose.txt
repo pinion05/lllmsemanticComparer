@@ -1,0 +1,54 @@
+## 요약
+
+**작업 디렉토리 및 프로젝트 구조**
+사용자의 작업 디렉토리는 `~/tmp`이며, 그 안에 `fear-greed-data/` 프로젝트가 있다. 이후 사용자가 `raddit` 폴더를 언급하여 `/home/user/raddit`로 이동했다. `raddit`은 Reddit 주식 언급량을 집계하고 $5 미만 페니주식을 필터링하는 대시보드 프로젝트로, `raddit-reddit/`(Python FastAPI Reddit RSS 수집 RPC 서비스), `raddit-astro/`(Astro 웹 대시보드 메인), `raddit-next/`(Next.js), `docs/`(경쟁사 리서치 문서)로 구성되어 있다. CONTRIBUTING 규칙은 main/dev 직접 push 금지, 이슈→토픽 브랜치→PR, FF 머지 금지를 명시한다.
+
+**브랜치 동기화 및 분석**
+`git pull`로 dev와 main을 origin 최신화했다. dev는 이미 최신(0/0)이었고, main은 25커밋 뒤처져 fast-forward로 동기화했다(ca7ca30). 현재 작업 브랜치는 `feat/lightweight-charts`로, origin/dev(65d88b6)와 동일하며 미커밋 변경사항으로 `raddit-astro/package*.json`에 lightweight-charts 의존성만 추가된 상태였다. main이 dev보다 5개 merge 커밋 앞서 있었지만, `git diff origin/dev origin/main` 결과가 비어 있어 내용은 100% 동일했다. 이는 CONTRIBUTING의 "FF 머지 금지, 무조건 머지커밋" 규칙 때문으로 정상 동작이었다.
+
+**차트 라이브러리 교체 (PR #47)**
+이슈 #37 "refactor: 자체 구현 차트 → 차트 라이브러리 교체"에 따라 작업을 진행했다. 기존 차트는 순수 Canvas 2D로 수동 그리기(drawChart, 캔들·그리드·크로스헤어·툴팁 전부 손제작)였으며, 이를 TradingView lightweight-charts v5.2로 교체했다. 한국식 색상 규칙(빨강=상승 `--up`, 파랑=하락 `--down`)을 유지했다. 모달은 `classList={{ open }}` 토글 방식으로 항상 DOM에 존재하여 `onMount`에서 차트 인스턴스를 생성하고 재사용했다. `Dashboard.tsx`의 imports, refs, 시그널, 차트 블록, 생명주기, JSX를 한 번에 교체하고, `Layout.astro`의 `.hairline` CSS를 `.chart-canvas`/`.chart-msg`로 교체했다. `chartDim` 시그널 복구 및 미사용 `Time` import/`lastDetail` 정리 후 `astro build` 성공을 확인했다. 브라우저 스모크 테스트로 API 호출 전부 성공(60 캔들, 캔버스 7개 생성)을 검증했다.
+
+**architect 리뷰 및 수정 (PR #47)**
+architect 서브에이전트 리뷰 결과:
+- 🟥 P1 BLOCK: `.tip{display:flex}`가 `[hidden]` 속성(UA `display:none`)을 이겨 툴팁이 안 숨겨짐 → `Layout.astro`에 글로벌 `[hidden]{display:none!important}` 추가로 수정
+- 🟧 P2 WATCH: 분봉 프리/애프터마켓 밴드 제거 → 후속 PR으로 de-scope
+- 🟨 P3 MINOR: 다크모드 토글 시 crosshair/baselineLine/거래량 색 미갱신 → `applyTheme`에 crosshair 색 추가 + `lastChartData` 전체 재렌더로 수정
+- 🟩 NIT: `getElementById` vs ref → 보류
+
+2차 리뷰에서 CLEAR/APPROVE 받았으며, 잔존 LOW 1건(`closeDetail` 미비워진 `lastChartData`)을 1줄로 수정 후 dev에 머지했다(d364611, 부모 2개 정상 머지커밋, FF 아님). PR #47 MERGED, 브랜치 삭제, 로컬 dev 동기화 완료.
+
+**차트 관련 이슈 정리**
+- #37(라이브러리 교체) 종료 — PR #47로 핵심 목표 달성, P2 밴드는 후속
+- #18(봉 간격 탭 개편) 종료 — 이미 구현됨(4528dfc, PR #32)이나 `Closes #18` 누락으로 미종결이었던 것 정리
+- #48(후속 이슈) 생성 — 분봉 프리/애프터마켓 세션 음영 밴드 복원
+
+**차트 스케일 찌그러짐 버그 (PR #50)**
+이슈 #49로 등록된 "봉 간격 전환 시 가격 스케일이 갱신 안 되어 차트가 위아래로 찌그러짐" 문제를 분석했다. 결정적 재현으로 원인을 특정했다: 오버레이(MA/BB)는 day(일봉)에서만 제공되는데, lightweight-charts가 같은 가격 스케일의 모든 시리즈 합집합으로 Y축을 자동 산정하여 넓은 BB 밴드(±2σ)가 Y축을 확장해 캔들을 찌그러뜨렸다. 구 Canvas 차트는 캔들 데이터만으로 Y축을 정하고 오버레이를 clip했기에 없었던 문제(PR #47 이관 회귀). 재현 결과: min→day 전환 시 캔들 실제 범위가 차트 높이의 ~35%로 압축(priceToCoordinate 픽셀 측정, 2회 확인). 수정(3줄): 오버레이 시리즈에 `autoscaleInfoProvider: () => null` 추가 → 자동 스케일 산정에서 제외, 캔들 데이터만으로 Y축 결정. PR #50 → dev 머지(머지커밋 0e62967), 이슈 #49 종결.
+
+**가격 스케일 수동 조작 후 찌그러짐 (PR #52)**
+사용자가 가격(Y) 스케일을 수동 줌/드래그하면 lightweight-charts가 `autoScale`을 끄고 수동 범위로 고정하는 것이 원인이었다. 이후 `setData`+`fitContent`(시간축만)해도 가격 스케일이 자동 리핏 안 되어 이전 수동 범위가 잔존했다. PR #50(오버레이)과 별개 원인으로, 둘 다 필요했다. 수정(6줄): `drawChart`에서 레인지 변경 시 `candleSeries.priceScale().applyOptions({ autoScale: true })` 재활성화. 단, 동일 레인지 60초 자동갱신에선 사용자 줌 존중(`lastRange`로 구분). 결정적 재현/검증: 수정 전 min 캔들 3%(8px) 찌그러짐 → 수정 후 63%(175px) 정상. PR #52 → dev 머지(머지커밋 f4304e7).
+
+**ApeWisdom 페니주식 필터 개선 (PR #51)**
+현재 ApeWisdom은 751개 전체 티커를 가져오면서 상위 120개만 가격조회하고 나머지를 버려(16%만 활용), $5 미만 페니주식 89개 중 62개(70%)가 랭크 401번 이후 깊은 곳에 묻혀 `slice(0,120)`에서 잘려나갔다. 게다가 `FALSE_POSITIVE`(EU·IQ·RR·DC·LINK)가 실제 <$5 주식까지 덮어 제거했다. 핵심 수치: 현재 회수율 29%(14개 중 4개만 노출). 수정:
+1. `attachQuotesBatch` — Yahoo spark 배치(20심볼/요청, 비인증) 전수 가격조회, per-ticker v8/chart 제거 → 요청 ~20배 절감
+2. `getData` — `slice(120)` 제거 → 전수조회 후 가격 필터, 페니모드는 EQUITY만(ETF 제외)
+3. `FALSE_POSITIVE` — 실제 <$5 주식은 보존(EU·IQ·RR·DC·LINK 회수)
+
+architect 리뷰 후 추가 수정:
+- P1: Yahoo 429 대량 실패 시 누락률 70% 초과 시 throw → 직전 정상 스냅샷 서빙(stale-if-error 보호)
+- P2: 순차 38청크 → 동시성 5 병렬로 콜드 로딩 11s+ → 2.5s
+- P3: FP 보존 임계값 가격필터 연동
+
+실측(/api/data?max_price=5): 노출 4건 → 19건(회수율 ~100%), EU/IQ/RR/DC/LINK 회수, ETF 노이즈 제거. PR #51 → dev 머지(머지커밋 57c5337).
+
+**호가잔량비율 테이블 표시 (PR #53)**
+단일 종목 상세 모달에서만 보이던 호가잔량비율(`fetchBidAsk`, Yahoo v7/quote + crumb 인증)을 테이블 전체로 확장했다. `attachBidAskBatch` — Yahoo v7/quote + crumb 배치 호가조회(신규), `getData`에서 가격 필터 후 items(~17건)에만 부착하여 비용 최소화. 표 COLS "호가 (매수%)" 추가(등락 뒤) + 정렬 지원 + 미니 바+숫자 셀. architect 리뷰 후 추가 수정:
+- P2: 401/403 시 crumb 재발급 재시도(단일 `fetchBidAsk`와 비일관 해소)
+- P2: `bidAskTotal` 부착 + 잔량<100 셀 흐림(opacity .4)+툴팁으로 저유동 노이즈 게이트
+
+E2E 실측(/api/data?max_price=5): 의미있는 비율(BATL 68%/잔량18600, WTI 44%/22800, AMC 49%/63000)은 진하게, 노이즈(OPEN·IQ·EU 등 잔량 2~7)는 흐림 처리(12/17). PR #53 → dev 머지(머지커밋 2c7e464).
+
+**신규 이슈 등록**
+- #54: feat: 차트 위주 스크리너 뷰 추가(목록형 ↔ 차트 그리드 토글) — lightweight-charts(#47) 재사용, fetchChart 캐시 활용, IntersectionObserver로 뷰포트 진입 시 생성·이탈 시 chart.remove() 권장
+- #55: feat: 프론트엔드 디자인/UX 전반 개선 — P1(다크모드 수동 토글, 로딩/빈/에러 스켈레톤, 모달·패널 오픈 애니메이션), P2(와이드 활용+모바일 표 폭, 필터바 sticky, 타일·헤더 계층 정제), P3(웹폰트 Pretendard 검토, 파비콘·OG 메타, 접근성 WCAG AA)

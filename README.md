@@ -455,3 +455,64 @@ summary, shared points, gap notes 같은 서술형 필드는 5개 실행 중에�
 - summary와 bullet 포인트는 대표 실행 1개를 사용하므로, 점수보다 표현이 조금 더 흔들릴 수 있습니다.
 
 그래도 현재 구조는 "압축 후보 여러 개를 자동으로 비교하고, 어떤 방식이 의미 보존에 유리한지 연구하는 용도"에는 꽤 잘 맞습니다.
+
+## 비교 연구 3: 컴팩션 프롬프트별 의미손실률 (DeepSeek V4 Flash)
+
+실행 시점:
+- 2026-07-30
+- 압축 모델: `deepseek-chat` (DeepSeek V4 Flash)
+- 평가 모델: 동일 (`deepseek-chat`)
+- 평가 전략: `sampling` (5회 trimean 집계)
+
+### 실험 설계
+
+1. 원본: agent-complex-task 세션 로그(03-raddit-dashboard-pr, 30,404자)에서 JSONL 구조/마크다운/코드블록을 제거하여 순수 의미 컨텐츠만 추출
+2. 3가지 컴팩션 프롬프트 + naive truncation baseline으로 압축
+   - **codex**: 9섹션 구조화 요약 (Claude Code 컴팩션 스타일)
+   - **goose**: 서술형 단락 압축
+   - **kilo**: 최소 불릿 압축
+   - **naive**: 단순 절단 (앞 30%)
+3. 원본 vs 각 압축본(4쌍)을 본 도구의 sampling 전략(5회 trimean)으로 평가
+
+### 결과
+
+| 방식 | 압축률 | Overall | 의미 | 정보 | A→B | B→A | 의미손실 | 정보손실 | Verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| **codex** | 18.6% | **93** | 95 | **90** | **95** | 90 | **5%** | **10%** | highly_equivalent |
+| goose | 15.9% | 93 | 95 | 90 | 89 | **96** | 5% | 10% | mostly_equivalent |
+| kilo | **15.4%** | 93 | 95 | 85 | 90 | 95 | 5% | 15% | mostly_equivalent |
+| naive | 30.0% | 84 | 95 | 60 | 69 | 90 | 5% | **40%** | partially_equivalent |
+
+상세 JSON: [`.omx/compaction-deepseek-eval.json`](./.omx/compaction-deepseek-eval.json)
+
+### 핵심 발견
+
+1. **의미 보존(semantic_similarity)은 4방식 모두 동일 (95점, 손실 5%)**
+   - 핵심 의미(무엇을 했는가, 무슨 결정을 내렸는가)는 압축 방식과 무관하게 보존됨
+   - LLM 기반 압축이든 단순 절단이든 주제/의미 수준에서는 같은 점수
+
+2. **정보량 보존에서 결정적 차이**
+   - codex/goose: 정보손실 10% — 구체적 파일 경로, 코드 스니펫, 에러 메시지 대부분 보존
+   - kilo: 정보손실 15% — 불릿이 너무 압축적이라 일부 디테일 누락
+   - naive: 정보손실 **40%** — 절단 이후 내용 전부 소실. 후반부 PR 머지, 버그 수정, 이슈 클로즈 전부 날아감
+
+3. **verdict 차이**
+   - codex만 `highly_equivalent`. 나머지 LLM 압축은 `mostly_equivalent`
+   - naive는 `partially_equivalent`로 떨어짐 — 30%나 공간을 차지했음에도 의미 보존 실패
+
+4. **실행 안정성**
+   - codex: 5/5 성공, 밴드 0 (완벽 일치)
+   - goose: 3/5 성공 (JSON 파싱 실패 2건 — 긴 배열 필드에서 문자열 종료 누락)
+   - kilo: 1/5 성공 (동일한 JSON 파싱 문제)
+   - naive: 5/5 성공
+
+5. **압축률 vs 정보손실 트레이드오프**
+   - codex: 18.6% 압축률에 손실 10% → **가장 효율적**
+   - kilo: 15.4%로 가장 작지만 손실 15% → 한계 효용 급감
+   - naive: 30%나 쓰고 손실 40% → **최악**
+
+### 결론
+
+- **구조화 압축(codex 9섹션)**이 단순 불릿(kilo)이나 서술형(goose)보다 정보 보존에서 우위
+- **naive truncation은 절대 쓰면 안 됨** — 공간을 2배 쓰면서도 정보손실 4배
+- DeepSeek V4 Flash는 컴팩션 생성기로는 우수하나, 평가자로 사용 시 JSON 출력이 길어지면 파싱 실패가 발생할 수 있음 (kilo/goose에서 관찰)

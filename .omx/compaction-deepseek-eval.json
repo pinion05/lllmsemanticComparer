@@ -1,0 +1,137 @@
+{
+  "codex": {
+    "overall_equivalence": 93,
+    "semantic_similarity": 95,
+    "information_amount_parity": 90,
+    "doc_a_coverage_by_doc_b": 95,
+    "doc_b_coverage_by_doc_a": 90,
+    "verdict": "highly_equivalent",
+    "semantic_loss_rate": 5,
+    "info_loss_rate": 10,
+    "coverage_loss": 5,
+    "compression_ratio": 18.6,
+    "total_tokens": 100463,
+    "runs": 5,
+    "bands": {
+      "semantic": "95-95",
+      "info": "90-90",
+      "cov_ab": "95-95",
+      "cov_ba": "90-90"
+    },
+    "representative_summary": "Both documents describe the same project (raddit), the same sequence of user requests, the same technical decisions (lightweight-charts v5.2, Yahoo Finance APIs, ApeWisdom), the same bugs and fixes (chart scaling, penny stock filter, bid-ask ratio), and the same pending tasks. Document A is the full conversational transcript with all intermediate steps, while Document B is a compressed summary that preserves all material facts, code paths, error tables, and task lists. The only minor differences are that Document B omits some conversational filler and the exact line numbers in code snippets, but all factual content is covered.",
+    "gap_notes": [
+      "Document B omits the conversational context and intermediate debugging steps, but all material facts are preserved.",
+      "Document A contains some internal system notes (e.g., 'compacted history') that are not in Document B, but these are not material to the project.",
+      "Document B explicitly lists all user messages and pending tasks in a structured format, which is not present in Document A.",
+      "The exact line numbers in code snippets are present in Document A but not in Document B, but the code paths and changes are fully described."
+    ],
+    "doc_a_only": [
+      "Exact line-by-line conversation including greetings, directory checks, and intermediate status messages",
+      "Detailed step-by-step reproduction of chart scaling bugs with priceToCoordinate pixel measurements",
+      "Exact code line numbers and anchor references during edits",
+      "Mention of 'compacted history content evicted to durable cold storage' (internal system note)",
+      "Specific user message about 'subreddit coverage' and the assistant's response about ApeWisdom coverage"
+    ]
+  },
+  "goose": {
+    "overall_equivalence": 93,
+    "semantic_similarity": 95,
+    "information_amount_parity": 90,
+    "doc_a_coverage_by_doc_b": 89,
+    "doc_b_coverage_by_doc_a": 96,
+    "verdict": "mostly_equivalent",
+    "semantic_loss_rate": 5,
+    "info_loss_rate": 10,
+    "coverage_loss": 11,
+    "compression_ratio": 15.9,
+    "total_tokens": 60561,
+    "runs": 3,
+    "bands": {
+      "semantic": "95-95",
+      "info": "90-90",
+      "cov_ab": "85-90",
+      "cov_ba": "95-100"
+    },
+    "representative_summary": "Both documents describe the same sequence of software development tasks: project setup, branch synchronization, chart library replacement (PR #47), bug fixes for chart scaling (PR #50, PR #52), ApeWisdom penny stock filter improvement (PR #51), bid-ask ratio table display (PR #53), and new issue registration (#54, #55). Document A is the original full conversation with detailed step-by-step actions, code snippets, and user interactions. Document B is a compressed summary that preserves all key facts, decisions, and outcomes but omits some minor details like specific code line numbers, exact error messages, and some intermediate verification steps. The core meaning and factual content are nearly identical.",
+    "gap_notes": [
+      "Document B omits some user interaction details and intermediate debugging steps, but these are not material to the core technical facts.",
+      "Document B does not include specific code line numbers or commit hashes, but the overall meaning and outcomes are preserved.",
+      "Document A contains more granular verification steps (e.g., pixel measurements, multiple retries) that are summarized in B.",
+      "Document B correctly captures all key decisions, PR merges, and issue registrations without distortion."
+    ],
+    "doc_a_only": [
+      "Detailed user interactions (e.g., 'raddit' typo, '고고', '풀해서 데브랑 메인 최신화해줘')",
+      "Specific code line numbers and variable names (e.g., chartDim signal, line 408, 433)",
+      "Exact error messages (e.g., JSX 7026 errors, ESM import failures, CORS issues)",
+      "Detailed browser smoke test steps (e.g., file:// ESM blocked, standalone.js global check)",
+      "Intermediate verification steps (e.g., priceToCoordinate pixel measurements, 2x confirmation)"
+    ]
+  },
+  "kilo": {
+    "overall_equivalence": 93,
+    "semantic_similarity": 95,
+    "information_amount_parity": 85,
+    "doc_a_coverage_by_doc_b": 90,
+    "doc_b_coverage_by_doc_a": 95,
+    "verdict": "mostly_equivalent",
+    "semantic_loss_rate": 5,
+    "info_loss_rate": 15,
+    "coverage_loss": 10,
+    "compression_ratio": 15.4,
+    "total_tokens": 19605,
+    "runs": 1,
+    "bands": {
+      "semantic": "95-95",
+      "info": "85-85",
+      "cov_ab": "90-90",
+      "cov_ba": "95-95"
+    },
+    "representative_summary": "Both documents describe the same sequence of software development tasks on the raddit project: chart library migration (PR #47), bug fixes for chart scaling (PR #50, #52), ApeWisdom penny stock pipeline overhaul (PR #51), bid-ask ratio column addition (PR #53), and issue registrations (#54, #55). Document A is a full conversational transcript with user queries and assistant responses, while Document B is a compressed factual summary. All core facts, decisions, outcomes, and metrics match. Minor omissions in Document B include some conversational context (e.g., user asking about subreddit coverage, the 'raddit' folder discovery) and the exact sequence of architect review iterations. Document A has slightly more detail on intermediate steps and user interactions, but the informational core is identical.",
+    "gap_notes": [
+      "Document B omits the conversational context and user queries, but all factual outcomes are preserved.",
+      "Document B does not mention the 'fear-greed-data' project or the initial working directory discovery.",
+      "Document B lacks the detailed step-by-step architect review iterations, but the final decisions and fixes are captured.",
+      "Document B does not include the exact code line numbers or file paths mentioned in Document A.",
+      "Document B does not mention the browser smoke test details (fancy-canvas issue)."
+    ],
+    "doc_a_only": [
+      "User asked about working directory and 'raddit' folder discovery",
+      "User asked about subreddit coverage (ApeWisdom vs all Reddit)",
+      "Detailed step-by-step architect review iterations and code changes",
+      "Exact sequence of user commands and assistant responses",
+      "Mention of 'fear-greed-data' project in working directory"
+    ]
+  },
+  "naive": {
+    "overall_equivalence": 84,
+    "semantic_similarity": 95,
+    "information_amount_parity": 60,
+    "doc_a_coverage_by_doc_b": 69,
+    "doc_b_coverage_by_doc_a": 90,
+    "verdict": "partially_equivalent",
+    "semantic_loss_rate": 5,
+    "info_loss_rate": 40,
+    "coverage_loss": 31,
+    "compression_ratio": 30.0,
+    "total_tokens": 107440,
+    "runs": 5,
+    "bands": {
+      "semantic": "95-95",
+      "info": "60-60",
+      "cov_ab": "60-95",
+      "cov_ba": "60-100"
+    },
+    "representative_summary": "Both documents describe the same conversation and development workflow for the raddit project, including the lightweight-charts migration, PR reviews, bug fixes, and feature additions. However, Document A is significantly more detailed, containing the full architect review results, multiple PR merges, and subsequent issues (e.g., chart scaling bug, dashboard bid-ask column, design improvement issue). Document B is truncated partway through the architect review, missing all later events.",
+    "gap_notes": [
+      "Document B is truncated mid-sentence during the architect review summary, missing all subsequent events (PR merges, bug fixes, feature additions, issue creation).",
+      "Document A contains approximately 3-4 times more material information than Document B."
+    ],
+    "doc_a_only": [
+      "Second architect review (CLEAR/APPROVE) and merge of PR #47 into dev",
+      "Closing of chart-related issues #37 and #18, creation of follow-up issue #48",
+      "Bug report and fix for chart scaling distortion when changing candle interval after manual vertical scale adjustment (PR #52)",
+      "Bug report and fix for chart scaling distortion due to overlay series (PR #50)",
+      "Analysis of ApeWisdom data pipeline inefficiency (only top 120 tickers checked, missing 81 of 89 penny stocks)"
+    ]
+  }
+}

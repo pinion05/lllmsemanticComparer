@@ -1,0 +1,59 @@
+- 작업 디렉토리: ~/tmp, fear-greed-data/ 프로젝트 포함
+- 로컬 폴더 /home/user/raddit 확인: raddit-reddit(Python FastAPI Reddit RSS 수집), raddit-astro(Astro 대시보드), raddit-next(Next.js?), docs, README, CONTRIBUTING, CI 워크플로
+- CONTRIBUTING 규칙: main/dev 직접 push 금지, 이슈→토픽 브랜치→PR, FF 머지 금지
+- git pull: dev 이미 최신(origin/dev와 동일), main 25커밋 뒤처짐 → fast-forward로 ca7ca30 동기화
+- 현재 브랜치: feat/lightweight-charts (origin/dev 65d88b6와 동일, 미커밋 변경: raddit-astro/package*.json에 lightweight-charts 의존성만 추가)
+- dev가 main보다 25커밋 뒤처진 이유: main에만 merge 커밋 5개 (dev→main 릴리스 시 non-fast-forward), git diff origin/dev origin/main = 비어 있음 (내용 100% 동일)
+- 현재 차트: 순수 Canvas 2D 수동 그리기 (drawChart(), 캔들·그리드·크로스헤어·툴팁 손제작)
+- 이슈 #37 "refactor: 자체 구현 차트 → 차트 라이브러리 교체" (OPEN) — feat/lightweight-charts 브랜치 작업 대상
+- 라이브러리 선정 완료: lightweight-charts v5.2 (ESM 전용, standalone 빌드 사용)
+- 색상 규칙: 빨강=상승(--up), 파랑=하락(--down) (한국식)
+- 모달: classList={{ open }} 토글 (항상 DOM 존재), 차트 컨테이너 상시 마운트
+- Dashboard.tsx 교체: imports, refs, 시그널, 차트 블록, 생명주기, JSX 한 번에 교체
+- Layout.astro: .hairline CSS → .chart-canvas/.chart-msg 교체
+- 문제: chartDim 시그널 삭제로 setChartDim 미정의 (408, 433줄) → 복구
+- JSX 7026 에러 328개: 원본부터 존재 (SolidJS JSX 타입 미로드), 실제 배포는 astro build(esbuild)만 사용
+- astro build 성공
+- 브라우저 스모크 테스트: production mjs가 fancy-canvas를 bare specifier로 import → 브라우저 직접 로드 불가 → standalone 빌드로 교체
+- 스모크 테스트: API 호출 전부 성공 (60 캔들, 캔버스 7개 생성)
+- 커밋: 4개 파일 (Dashboard.tsx, Layout.astro, package.json, package-lock.json)
+- PR #47 생성 (feat/lightweight-charts → dev)
+- architect 리뷰 결과:
+  - 🟥 P1 BLOCK: .tip{display:flex}가 [hidden] 속성(UA display:none)을 이겨서 툴팁이 안 숨겨짐 → 수정: Layout.astro에 글로벌 [hidden]{display:none!important} 추가
+  - 🟧 P2 WATCH: 분봉 프리/애프터마켓 밴드 제거 → 후속 PR (de-scope 명시)
+  - 🟨 P3 MINOR: 다크모드 토글 시 crosshair/baselineLine/거래량 색 미갱신 → 수정: applyTheme에 crosshair 색 추가 + lastChartData 전체 재렌더
+  - 🟩 NIT: getElementById vs ref → 보류
+- 2차 리뷰: CLEAR / APPROVE (P1·P3 FIXED, 재진입·stale 경로 안전, 신규 결함 없음)
+- 잔존 LOW 1건(closeDetail 미비워진 lastChartData) → closeDetail에 lastChartData 초기화 추가
+- dev 머지: d364611 (부모 2개: 65d88b6 + 964ac21) — 정상 머지커밋 (FF 아님, CONTRIBUTING 규칙 준수)
+- PR #47 = MERGED, 토픽 브랜치 삭제, 로컬 dev 동기화 완료
+- 이슈 정리: #37(라이브러리 교체) 종결, #18(봉 간격 탭 개편, 이미 구현됨) 종결, #48(분봉 프리/애프터마켓 세션 음영 밴드 복원) 신규 생성
+- 이슈 #49 등록: fix(chart) — 봉 간격 전환 시 가격 스케일 갱신 안 되어 차트 찌그러짐 (bug)
+- 원인 규명: 오버레이(MA/BB)가 day(일봉)에서만 제공, lightweight-charts가 같은 가격 스케일의 모든 시리즈 합집합으로 Y축 자동 산정 → BB 밴드(±2σ)가 Y축 확장 → 캔들 찌그러짐 (PR #47 이관 회귀)
+- 재현: min→day 전환 시 캔들 실제 범위가 차트 높이의 ~35%로 압축 (priceToCoordinate 픽셀 측정, 2회 확인)
+- 수정 (3줄): 오버레이 시리즈에 autoscaleInfoProvider: () => null → 자동 스케일 산정에서 제외
+- PR #50 → dev 머지 (머지커밋 0e62967), 이슈 #49 종결
+- ApeWisdom 분석: 751개 티커 전체 fetch, <$5 총 89개 중 Top 120에 8개만 포함 (slice(120)이 가격 필터 전에 81개 손실)
+- FALSE_POSITIVE (EU·IQ·RR·DC·LINK)가 실제 <$5 주식까지 제거
+- 현재 회수율: 29% (14개 중 4개만 노출)
+- 권장 워크플로우: ApeWisdom 전체 fetch → Yahoo spark batch(20심볼/요청, 비인증)로 751개 전수 가격조회 → 필터 순서: 가격<$maxPrice → EQUITY만(ETF 제외) → 멘션≥2 → FALSE_POSITIVE는 "가격 확인 후" 적용 → 랭킹: 멘션×업보트 복합점수
+- PR #51 구현: attachQuotesBatch (Yahoo spark 배치, per-ticker v8/chart 제거 → 요청 ~20배 절감), getData slice(120) 제거 → 전수조회 후 가격 필터, FALSE_POSITIVE 실제 <$5 주식 보존
+- 실측 (/api/data?max_price=5): 노출 4건 → 19건 (IQ $1.13, EU $1.22, RR $1.62, DC $4.34, LINK $4.24 회수, ETF 노이즈 제거)
+- architect 리뷰: WATCH → 수정 후 머지
+  - 🟧 P1: Yahoo 429 대량 실패 시 빈 결과가 캐시 덮어쓰기 (stale-if-error 무력화) → 누락률 70% 초과 시 throw (직전 정상 스냅샷 서빙)
+  - 🟧 P2: 순차 38청크 → 콜드 로딩 ~11s+ → 동시성 5 병렬 → 실측 2.5s
+  - 🟨 P3: FP 보존 임계 5 고정 → 가격필터 연동
+- PR #51 머지: 57c5337 (부모 2개: 0e62967+83365d3), 최종 $5 미만 노출 18건, 콜드 로딩 2.5s
+- 차트 찌그러짐 추가 원인: 사용자가 가격(Y) 스케일 수동 조작 시 autoScale=false → 이후 setData+fitContent(시간축만)해도 가격 스케일 자동 리핏 안 됨 → 찌그러짐
+- 재현: 수동조정 후 min 캔들 3%(8px) 찌그러짐 → 수정 후 63%(175px) 정상
+- 수정 (6줄): drawChart에서 레인지 변경 시 candleSeries.priceScale().applyOptions({ autoScale: true }) 재활성화 (동일 레인지 60초 자동갱신은 사용자 줌 존중, lastRange로 구분)
+- PR #52 머지: f4304e7 (머지커밋)
+- 호가잔량비율 배치 조회: Yahoo v7/quote + crumb 배치 검증 완료 (BATL 매수68%, WTI 44% 등 정상)
+- PR #53 구현: attachBidAskBatch (Yahoo v7/quote + crumb 배치 호가조회), getData 필터 후 items(~17건)에만 부착, 표 COLS "호가 (매수%)" 추가 + 정렬 + 미니 바+숫자 셀
+- architect 리뷰: WATCH → 수정 후 머지
+  - 🟧 P2: attachBidAskBatch 401/403 시 crumb 재발급 재시도 안 함 → 401/403 시 yahooAuth 리셋+재발급 1회 재시도
+  - 🟧 P2: 저유동 페니주식 bidSize=1~2 → ~50% 노이즈 → bidAskTotal 부착 + 잔량<100 셀 흐림(opacity .4)+툴팁
+  - 🟨 P3: 9컬럼 표 폭 → min-width 860→900
+- PR #53 머지: 2c7e464 (머지커밋), E2E 실측: 의미있는 비율 진하게(BATL 68%/18600, WTI 44%/22800, AMC 49%/63000), 노이즈 흐림(OPEN·IQ·EU 등 잔량 2~7) — 12/17 얕은 호가창 흐림 처리
+- 이슈 #54 등록: feat: 차트 위주 스크리너 뷰 추가 (목록형 ↔ 차트 그리드 토글) (enhancement)
+- 이슈 #55 등록: feat: 프론트엔드 디자인/UX 전반 개선 (enhancement) — P1: 다크모드 수동 토글, 로딩/빈/에러 스켈레톤, 모달·패널 오픈 애니메이션 / P2: 와이드 활용+모바일 표 폭, 필터바 sticky, 타일·헤더 계층 정제 / P3: 웹폰트(Pretendard) 검토, 파비콘·OG 메타, 접근성(WCAG AA)

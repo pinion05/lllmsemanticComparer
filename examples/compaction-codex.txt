@@ -1,0 +1,133 @@
+## 1. Primary Request and Intent
+사용자는 raddit 프로젝트(Reddit 주식 언급량 집계 + $5 미만 페니주식 필터 대시보드)에서 차트 라이브러리 교체(TradingView lightweight-charts v5.2), 페니주식 필터 최적화, 호가잔량비율 표시, 디자인 개선 등을 요청. 모든 작업은 CONTRIBUTING 규칙(이슈→토픽 브랜치→PR→머지커밋)을 준수하여 진행.
+
+## 2. Key Technical Concepts
+- **raddit-reddit/**: Python(FastAPI) Reddit RSS 수집 RPC 서비스. Reddit이 Node.js TLS 지문을 차단해서 stdlib urllib로만 통과.
+- **raddit-astro/**: Astro 웹 대시보드(메인). SolidJS + TypeScript.
+- **lightweight-charts v5.2**: ESM 전용, `addSeries(SeriesDefinition, ...)` 패턴, `autoscaleInfoProvider`로 오버레이 스케일 제외 가능.
+- **Yahoo Finance API**: v8/chart(per-ticker, 인증 불필요), spark(batch, 인증 불필요), v7/quote(batch, crumb 인증 필요).
+- **ApeWisdom**: Reddit 멘션 데이터 제공(가격 정보 없음). 751개 티커 전체 fetch 가능.
+- **한국식 색상 규칙**: 빨강=상승(--up), 파랑=하락(--down).
+- **CONTRIBUTING 규칙**: main/dev 직접 push 금지, 무조건 이슈→토픽 브랜치→PR, FF머지 금지(머지커밋만).
+
+## 3. Files and Code Sections (with paths and snippets)
+
+### raddit-astro/src/lib/upstream.ts
+- **MentionItem 인터페이스** (라인 69): `buy_ratio_pct?: number; bidAskTotal?: number;`
+- **attachBidAskBatch** (라인 173 이후): Yahoo v7/quote + crumb 배치 호가조회. 401/403 시 auth 리셋+재시도.
+- **fetchMentions**: ApeWisdom 호출 (8페이지, ~751 티커).
+- **attachQuotesBatch**: Yahoo spark 배치(20심볼/요청, 비인증) 전수 가격조회. 동시성 5 병렬.
+
+### raddit-astro/src/lib/services.ts
+- **getData** (라인 83-111): 
+  - slice(120) 제거 → 전수조회 후 가격 필터
+  - 페니모드는 EQUITY만(ETF 제외)
+  - 오버레이는 day 범위에서만 제공
+  - Yahoo bulk 실패 시 누락률 70% 초과 시 throw → stale-if-error 보호
+
+### raddit-astro/src/components/Dashboard/Dashboard.tsx
+- **차트 구현**: lightweight-charts v5.2로 교체. `onMount`에서 인스턴스 생성, `onCleanup`에서 제거.
+- **drawChart**: 레인지 변경 시 `candleSeries.priceScale().applyOptions({ autoScale: true })` 재활성화.
+- **오버레이 시리즈**: `autoscaleInfoProvider: () => null`로 자동스케일 기여에서 제외.
+- **FALSE_POSITIVE**: 실제 $5 미만 주식은 보존 (가격필터 연동).
+- **COLS**: "호가 (매수%)" 컬럼 추가 (등락 뒤). 정렬 지원.
+- **bidAskTotal 매핑**: 잔량<100 셀 흐림 처리(opacity .4)+툴팁.
+
+### raddit-astro/src/layouts/Layout.astro
+- **글로벌 CSS**: `[hidden]{display:none!important}` 추가 (P1 수정).
+- **.thin 흐림**: `opacity: .4` + 툴팁.
+- **table min-width**: 860→900.
+
+## 4. Errors and Fixes
+
+| 에러 | 원인 | 수정 |
+|---|---|---|
+| `.tip{display:flex}`가 `[hidden]` 묻히기 → 툴팁 안 숨겨짐 (P1 BLOCK) | CSS 명시도 문제 | `[hidden]{display:none!important}` 글로벌 규칙 추가 |
+| 다크모드 토글 시 crosshair/baselineLine/거래량 색 미갱신 (P3 MINOR) | applyTheme에 crosshair 색 누락 | crosshair 색 추가 + lastChartData 전체 재렌더 |
+| 봉 간격 전환 시 가격 스케일 찌그러짐 (#49) | 오버레이(MA/BB)가 자동스케일 합집합에 포함 → BB 밴드가 Y축 확장 | `autoscaleInfoProvider: () => null`로 오버레이 제외 |
+| 사용자 수동조정 후 캔들단위 변경 시 찌그러짐 (#52) | 수동 줌/드래그로 autoScale=false 고정 | 레인지 변경 시 `autoScale: true` 재활성화 |
+| $5 미만 주식 0개 | slice(120)이 가격 필터 전에 잘라버림 + FALSE_POSITIVE가 실제 <$5 주식까지 제거 | slice(120) 제거 + FALSE_POSITIVE 가격 연동 |
+| Yahoo 429 대량 실패 시 빈 결과가 캐시 덮어쓰기 (P1) | stale-if-error 무력화 | 누락률 70% 초과 시 throw |
+| attachBidAskBatch 401/403 재시도 부재 (P2) | crumb 조기 만료 시 ~1h 호가 결손 | 401/403 시 auth 리셋+재발급 1회 재시도 |
+| 저유동 페니주식 bidSize=1~2 노이즈 (P2) | ~50% 노이즈를 권위적 표시 | bidAskTotal 부착 + 잔량<100 셀 흐림 |
+
+## 5. Problem Solving
+
+### 차트 스케일 찌그러짐 (#49, #52)
+1. **가설**: 오버레이가 Y축 확장 → `autoscaleInfoProvider: () => null`로 해결 (#50)
+2. **추가 발견**: 사용자 수동조정 후에도 찌그러짐 → autoScale-off가 원인 → 레인지 변경 시 `autoScale: true` 재활성화 (#52)
+3. **검증**: priceToCoordinate 픽셀 측정으로 수정 전후 비교 (3%→63%)
+
+### 페니주식 필터 최적화 (#51)
+1. **분석**: ApeWisdom 751개 전체 fetch, 상위 120개만 가격조회 → 89개 <$5 중 62개(70%)가 랭크 401+에 묻힘
+2. **해결**: slice(120) 제거 → spark batch 전수 가격조회 + EQUITY 필터 + FALSE_POSITIVE 가격 연동
+3. **효과**: 노출 4건 → 18건, 콜드 로딩 11s→2.5s, Yahoo 요청 ~20배 절감
+
+### 호가잔량비율 표시 (#53)
+1. **검증**: Yahoo v7/quote + crumb 배치 호가조회 가능 확인
+2. **구현**: attachBidAskBatch (401/403 재시도 포함) + 표 COLS 추가 + 저유동 흐림 처리
+3. **E2E**: 17/17 아이템에 buy_ratio_pct 부착
+
+## 6. All User Messages (verbatim if short, summarized if long)
+
+1. "하이"
+2. "지금 워킹디렉토리가 어디임?"
+3. "이동 가능함?"
+4. "raddit"
+5. "내 로컬에 raddit이란 폴더가있어"
+6. "고고"
+7. "풀해서 데브랑 메인 최신화해줘"
+8. "작업중이던 브랜치는뭐임"
+9. "확인해봐 왜 뒤쳐졌는지 분석"
+10. "작업 착수하자"
+11. "pr 올리고 pr 을 서브에이전트 심층리뷰시켜"
+12. "한번 더 리뷰하고 승인받으면 데브 머지"
+13. "기존에 있던 차트관련 이슈들 닫아도되면 닫아"
+14. "이슈등록 : 차트 봉 단위를 변경할때 각각 차트가 초기화? 가 제대로 안되고 높이단위는 유지되서 주 -> 5분 으로 변경하면 차트가 심하게 위아래로 찌그러지는 문제"
+15. "응 해줘"
+16. "현재 ape wisdom 의 풀파워를 쓰고있는게 맞아? 현재기준 5달러미만주식 0개나오는데? 뭔가 필터가 비효율적인거같아 분석해보고 너가 임의로 다양한 다양한 필터 만들어서 테스트해보고 가장 적절한 패니코인 조회 워크플로우를 정의해봐"
+17. "한국어로 요약대답해줘"
+18. "pr까지"
+19. "근데 서브레딧은 모든 레딧 전체 모든 서브레딧에서 가져올 수 있어?"
+20. "계속진행"
+21. "서브에이전트 검증루프 후 머지"
+22. "차트 세로스케일을 조정하지않고 캔들 단위를 변경하면 잘 되는데 세로 스케일을 한번이라도 수정하고 캔들단위를 변경하면 또 찌그러짐"
+23. "단일종목 자세히보기 말고 테이블 보이는 대시보드 화면에서 각 종목 호가잔량비율 보이게해줘"
+24. "리뷰루프"
+25. "프론트 디자인 개선 이슈도 등록해줘"
+
+## 7. Pending Tasks
+
+| 작업 | 이슈/PR | 상태 |
+|---|---|---|
+| 분봉 프리/애프터마켓 세션 음영 밴드 복원 | #48 | OPEN (후속 PR 필요) |
+| 차트 위주 스크리너 뷰 추가 (목록형 ↔ 차트 그리드 토글) | #54 | OPEN (구현 대기) |
+| 프론트엔드 디자인/UX 전반 개선 (P1: 다크모드 토글, 스켈레톤, 애니메이션) | #55 | OPEN (P1 3종부터 구현) |
+| spark 단일 의존 폴백 없음 | #51 리뷰 P2 잔존 | 후속 PR 필요 |
+
+## 8. Current Work
+
+**완료된 작업 (dev 머지 완료):**
+- PR #47: 차트 라이브러리 교체 (lightweight-charts v5.2) + architect 리뷰 수정
+- PR #50: 오버레이 autoscaleInfoProvider 제외 (차트 찌그러짐 #1)
+- PR #51: 페니주식 필터 최적화 (전수조회 + EQUITY 필터 + FALSE_POSITIVE 연동)
+- PR #52: 사용자 수동조정 후 autoScale 재활성화 (차트 찌그러짐 #2)
+- PR #53: 대시보드 호가잔량비율 표시 + architect 리뷰 수정
+
+**닫힌 이슈:**
+- #37 (차트 라이브러리 교체) — PR #47 머지로 종결
+- #18 (봉 간격 탭 개편) — 이미 구현됨, Closes #18 누락 정리
+- #49 (차트 찌그러짐) — PR #50 머지로 종결
+
+**생성된 이슈:**
+- #48 (세션 밴드 후속)
+- #54 (차트 스크리너 뷰)
+- #55 (프론트 디자인 개선)
+
+## 9. Next Steps
+
+1. **PR #51, #52, #53 머지 완료** — CI가 raddit-web-dev 자동 배포 예정
+2. **#48 (세션 밴드)**: 후속 PR로 구현 필요
+3. **#54 (차트 스크리너 뷰)**: lightweight-charts(#47) 재사용, fetchChart 캐시 활용, IntersectionObserver로 뷰포트 진입 시 생성·이탈 시 chart.remove()
+4. **#55 (디자인 개선)**: P1 3종(다크모드 토글, 스켈레톤, 애니메이션)부터 브랜치 잡아 구현
+5. **spark 폴백**: 단일 의존 문제 해결을 위한 후속 PR
